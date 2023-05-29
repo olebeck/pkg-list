@@ -56,125 +56,123 @@ class PkgItem:
     info_offset: int
 
 class Pkg:
-    revision:   bytes
-    pkgtype:    bytes
-    meta_offset:int
-    meta_count: int
-    meta_size:  int
-    item_count: int
-    item_offset:int
-    item_size:  int
-    total_size: int
-    enc_offset: int
-    enc_size:   int
-    content_id: str
-    digest:     bytes
-    iv:         bytes
-    key_type:   int
+    revision:     bytes
+    pkgtype:      bytes
+    meta_offset:  int
+    meta_count:   int
+    meta_size:    int
+    item_count:   int
+    item_offset:  int
+    item_size:    int
+    total_size:   int
+    enc_offset:   int
+    enc_size:     int
+    content_id:   str
+    digest:       bytes
+    iv:           bytes
+    key_type:     int
     content_type: int
-    sfo_offset: int
-    sfo_size:   int
+    sfo_offset:   int
+    sfo_size:     int
 
     items: List[PkgItem]
     def __init__(self) -> None:
         self.items = list()
 
-# reads pkg headers from a http response stream
-async def read_pkg(resp: asyncio.StreamReader) -> Pkg:
-    stream = ResponseStream(resp)
+    @staticmethod
+    async def from_stream(r: asyncio.StreamReader) -> "Pkg":
+        stream = ResponseStream(r)
+        pkg = Pkg()
+        if await stream.read(4) != b'\x7fPKG':
+            raise Exception("wrong magic")
+        pkg.revision    = await stream.read(2)
+        pkg.pkgtype     = await stream.read(2)
+        pkg.meta_offset = await read_uint32(stream)
+        pkg.meta_count  = await read_uint32(stream)
+        pkg.meta_size   = await read_uint32(stream)
+        pkg.item_count  = await read_uint32(stream)
+        pkg.total_size  = await read_uint64(stream)
+        pkg.enc_offset  = await read_uint64(stream)
+        assert pkg.enc_offset % 16 == 0
+        pkg.enc_size    = await read_uint64(stream)
+        pkg.content_id  = (await stream.read(0x24)).decode("ascii")
+        _               = await stream.read(0x0c) # padding
+        pkg.digest      = await stream.read(0x10)
+        pkg.iv          = await stream.read(0x10)
+        await stream.seek(0xe7, io.SEEK_SET)
+        pkg.key_type    = int.from_bytes(await stream.read(1), "big") & 7
 
-    pkg = Pkg()
-    if await stream.read(4) != b'\x7fPKG':
-        raise Exception("wrong magic")
-    pkg.revision    = await stream.read(2)
-    pkg.pkgtype     = await stream.read(2)
-    pkg.meta_offset = await read_uint32(stream)
-    pkg.meta_count  = await read_uint32(stream)
-    pkg.meta_size   = await read_uint32(stream)
-    pkg.item_count  = await read_uint32(stream)
-    pkg.total_size  = await read_uint64(stream)
-    pkg.enc_offset  = await read_uint64(stream)
-    assert pkg.enc_offset % 16 == 0
-    pkg.enc_size    = await read_uint64(stream)
-    pkg.content_id  = (await stream.read(0x24)).decode("ascii")
-    _               = await stream.read(0x0c) # padding
-    pkg.digest      = await stream.read(0x10)
-    pkg.iv          = await stream.read(0x10)
-    await stream.seek(0xe7, io.SEEK_SET)
-    pkg.key_type    = int.from_bytes(await stream.read(1), "big") & 7
+        pkg.content_type = 0
+        pkg.item_offset = 0
+        pkg.item_size = 0
+        pkg.sfo_offset = 0
+        pkg.sfo_size = 0
+        for _ in range(pkg.meta_count):
+            await stream.seek(pkg.meta_offset, 0)
+            meta_elem_type = await read_uint32(stream)
+            meta_elem_size = await read_uint32(stream)
+            if meta_elem_type == 2:
+                pkg.content_type = content_type = await read_uint32(stream)
+            elif meta_elem_type == 13:
+                pkg.item_offset = await read_uint32(stream)
+                pkg.item_size   = await read_uint32(stream)
+            elif meta_elem_type == 14:
+                pkg.sfo_offset = await read_uint32(stream)
+                pkg.sfo_size   = await read_uint32(stream)
+            pkg.meta_offset += 2 * 4 + meta_elem_size
 
-    pkg.content_type = 0
-    pkg.item_offset = 0
-    pkg.item_size = 0
-    pkg.sfo_offset = 0
-    pkg.sfo_size = 0
-    for _ in range(pkg.meta_count):
-        await stream.seek(pkg.meta_offset, 0)
-        meta_elem_type = await read_uint32(stream)
-        meta_elem_size = await read_uint32(stream)
-        if meta_elem_type == 2:
-            pkg.content_type = content_type = await read_uint32(stream)
-        elif meta_elem_type == 13:
-            pkg.item_offset = await read_uint32(stream)
-            pkg.item_size   = await read_uint32(stream)
-        elif meta_elem_type == 14:
-            pkg.sfo_offset = await read_uint32(stream)
-            pkg.sfo_size   = await read_uint32(stream)
-        pkg.meta_offset += 2 * 4 + meta_elem_size
+        PkgType = 0
+        if content_type == 6:
+            PkgType = pkg_type.PKG_TYPE_PSX
+        elif content_type == 7 or content_type == 0xe or content_type == 0xf or content_type == 0x10:
+            PkgType = pkg_type.PKG_TYPE_PSP
+        elif content_type == 0x15:
+            PkgType = pkg_type.PKG_TYPE_VITA_APP
+        elif content_type == 0x16:
+            PkgType = pkg_type.PKG_TYPE_VITA_DLC
+        elif content_type == 0x18:
+            PkgType = pkg_type.PKG_TYPE_VITA_PSM
+        else:
+            raise Exception(f"unsupported content_type {content_type}")
 
-    PkgType = 0
-    if content_type == 6:
-        PkgType = pkg_type.PKG_TYPE_PSX
-    elif content_type == 7 or content_type == 0xe or content_type == 0xf or content_type == 0x10:
-        PkgType = pkg_type.PKG_TYPE_PSP
-    elif content_type == 0x15:
-        PkgType = pkg_type.PKG_TYPE_VITA_APP
-    elif content_type == 0x16:
-        PkgType = pkg_type.PKG_TYPE_VITA_DLC
-    elif content_type == 0x18:
-        PkgType = pkg_type.PKG_TYPE_VITA_PSM
-    else:
-        raise Exception(f"unsupported content_type {content_type}")
+        if PkgType == pkg_type.PKG_TYPE_PSP:
+            raise NotImplementedError("psp")
+        if PkgType == pkg_type.PKG_TYPE_VITA_PSM:
+            raise NotImplementedError("psm")
 
-    main_key = bytes()
-    if pkg.key_type == 1:
-        main_key = pkg_psp_key
-        ps3_key = AES.new(pkg_ps3_key, AES.MODE_ECB)
-    elif pkg.key_type == 2:
-        key1 = AES.new(pkg_vita_2, AES.MODE_ECB)
-        main_key = key1.encrypt(pkg.iv)
-    elif pkg.key_type == 3:
-        key1 = AES.new(pkg_vita_3, AES.MODE_ECB)
-        main_key = key1.encrypt(pkg.iv)
-    elif pkg.key_type == 4:
-        key1 = AES.new(pkg_vita_4, AES.MODE_ECB)
-        main_key = key1.encrypt(pkg.iv)
-    
+        main_key = bytes()
+        if pkg.key_type == 1:
+            main_key = pkg_psp_key
+            ps3_key = AES.new(pkg_ps3_key, AES.MODE_ECB)
+        elif pkg.key_type == 2:
+            key1 = AES.new(pkg_vita_2, AES.MODE_ECB)
+            main_key = key1.encrypt(pkg.iv)
+        elif pkg.key_type == 3:
+            key1 = AES.new(pkg_vita_3, AES.MODE_ECB)
+            main_key = key1.encrypt(pkg.iv)
+        elif pkg.key_type == 4:
+            key1 = AES.new(pkg_vita_4, AES.MODE_ECB)
+            main_key = key1.encrypt(pkg.iv)
 
-    if PkgType == pkg_type.PKG_TYPE_PSP:
-        raise NotImplementedError("psp")
-    if PkgType == pkg_type.PKG_TYPE_VITA_PSM:
-        raise NotImplementedError("psm")
+        for item_index in range(pkg.item_count):
+            item = PkgItem()
+            item.info_offset = pkg.item_offset + item_index * 32
+            assert item.info_offset % 16 == 0
 
-    for item_index in range(pkg.item_count):
-        item = PkgItem()
-        item.info_offset = pkg.item_offset + item_index * 32
-        assert item.info_offset % 16 == 0
+            await stream.seek(pkg.enc_offset + item.info_offset, io.SEEK_SET)
+            item_info = await read_decrypt(stream, main_key, pkg.iv, 32, item.info_offset // 16)
+            (name_offset, name_size, data_offset, item.size) = struct.unpack(">IIII", item_info[0:16])
+            psp_type = item_info[24]
+            item.flags = PkgItemFlags(item_info[27])
 
-        await stream.seek(pkg.enc_offset + item.info_offset, io.SEEK_SET)
-        item_info = await read_decrypt(stream, main_key, pkg.iv, 32, item.info_offset // 16)
-        (name_offset, name_size, data_offset, item.size) = struct.unpack(">IIII", item_info[0:16])
-        psp_type = item_info[24]
-        item.flags = PkgItemFlags(item_info[27])
+            assert name_offset % 16 == 0
+            assert data_offset % 16 == 0
 
-        assert name_offset % 16 == 0
-        assert data_offset % 16 == 0
-
-        await stream.seek(pkg.enc_offset + name_offset, io.SEEK_SET)
-        item.name = (await read_decrypt(stream, main_key, pkg.iv, name_size, name_offset // 16)).decode("utf-8")
-        pkg.items.append(item)
-    stream.close()
-    return pkg
+            await stream.seek(pkg.enc_offset + name_offset, io.SEEK_SET)
+            item.name = (await read_decrypt(stream, main_key, pkg.iv, name_size, name_offset // 16)).decode("utf-8")
+            pkg.items.append(item)
+        stream.close()
+        return pkg
 
 
 # test
@@ -185,10 +183,11 @@ if __name__ == "__main__":
     async def main():
         client = aiohttp.ClientSession()
         r = await client.get(URL)
-        pkg_object = await read_pkg(r.content)
+        pkg_object = await Pkg.from_stream(r.content)
         for item in pkg_object.items:
             print(item.name)
         r.close()
         print()
+        await client.close()
 
     asyncio.get_event_loop().run_until_complete(main())

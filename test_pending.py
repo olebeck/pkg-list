@@ -3,7 +3,8 @@ import aiohttp
 import asyncio
 from game_list import get_vita_games_pending, get_ps3_games_pending
 from itertools import islice
-import pkg, json
+import json
+from pkg import zrif_decode, Pkg
 
 
 def limited_as_completed(coros, limit):
@@ -36,12 +37,12 @@ async def test_pkg(data, client: aiohttp.ClientSession) -> Tuple[Exception, str]
     print(titleid)
 
     try:
-        pkg.zrif_decode(zrif)
+        zrif_decode(zrif)
     except Exception as e:
         return e, "zrif invalid", titleid, None
 
     r = await client.get(url)
-    pkg_object = await pkg.read_pkg(r.content)
+    pkg_object = await Pkg.from_stream(r.content)
     if pkg_object == None:
         raise Exception("")
     return None, "valid", titleid, pkg_object

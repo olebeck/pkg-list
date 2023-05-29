@@ -3,7 +3,7 @@ from updates import GetGameUpdates, Update
 import aiohttp, asyncio
 
 from utils import limited_as_completed
-from pkg import read_pkg, PkgItem
+from pkg import Pkg, PkgItem
 import db
 
 
@@ -16,7 +16,7 @@ async def get_pkg_filelist(info: dict) -> tuple[list[PkgItem], str]:
         return None, titleid
 
     r = await client.get(url)
-    pkg_object = await read_pkg(r.content)
+    pkg_object = await Pkg.from_stream(r.content)
     r.close()
     if pkg_object == None:
         return None, titleid
@@ -39,7 +39,7 @@ async def get_update_diffs(info: dict, updates: dict[str, Update]):
         print("fetching update", titleid, up.ver)
         try:
             r = await client.get(up.url)
-            pkg_object = await read_pkg(r.content)
+            pkg_object = await Pkg.from_stream(r.content)
             r.close()
             print("get_update_diffs", titleid)
         except Exception as e:
