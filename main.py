@@ -20,7 +20,7 @@ async def get_pkg_filelist(info: dict) -> tuple[list[PkgItem], str]:
     r.close()
     if pkg_object == None:
         return None, titleid
-    print("get_pkg_filelist", titleid)
+    print("get_pkg_filelist", titleid, len(pkg_object.items))
     return pkg_object, titleid
 
 async def get_updates(info):

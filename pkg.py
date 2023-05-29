@@ -55,6 +55,9 @@ class PkgItem:
     size:  int
     info_offset: int
 
+    def __repr__(self):
+        return f"PkgItem('{self.name}')"
+
 class Pkg:
     revision:     bytes
     pkgtype:      bytes
@@ -139,6 +142,9 @@ class Pkg:
             raise NotImplementedError("psp")
         if PkgType == pkg_type.PKG_TYPE_VITA_PSM:
             raise NotImplementedError("psm")
+        if PkgType == pkg_type.PKG_TYPE_PSX:
+            print("this is psx...")
+            return None
 
         main_key = bytes()
         if pkg.key_type == 1:
@@ -166,10 +172,12 @@ class Pkg:
             item.flags = PkgItemFlags(item_info[27])
 
             assert name_offset % 16 == 0
-            assert data_offset % 16 == 0
-
             await stream.seek(pkg.enc_offset + name_offset, io.SEEK_SET)
-            item.name = (await read_decrypt(stream, main_key, pkg.iv, name_size, name_offset // 16)).decode("utf-8")
+            name_b = await read_decrypt(stream, main_key, pkg.iv, name_size, name_offset // 16)
+            item.name = name_b.decode("utf-8")
+
+            #assert data_offset % 16 == 0
+
             pkg.items.append(item)
         stream.close()
         return pkg
