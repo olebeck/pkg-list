@@ -30,8 +30,8 @@ def limited_as_completed(coros, limit):
 
 
 async def test_pkg(data, client: aiohttp.ClientSession) -> Tuple[Exception, str]:
-    url,zrif,titleid = data['PKG direct link'], data["zRIF"], data["Title ID"]
-    if not url.startswith("http") or zrif == "MISSING":
+    url,zrif,titleid = data['PKG direct link'], data["Title ID"]
+    if not url.startswith("http"):
         return Exception(""), None, titleid, None
     print(titleid)
 
@@ -41,7 +41,7 @@ async def test_pkg(data, client: aiohttp.ClientSession) -> Tuple[Exception, str]
         return e, "zrif invalid", titleid, None
 
     r = await client.get(url)
-    pkg_object = await pkg.read_pkg(r.content, zrif)
+    pkg_object = await pkg.read_pkg(r.content)
     if pkg_object == None:
         raise Exception("")
     return None, "valid", titleid, pkg_object

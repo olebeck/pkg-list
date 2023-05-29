@@ -7,7 +7,7 @@ ZRIF = "KO5ifR1dQ+eHBpiYGBtDTTWxNATZ7+vp5+oc5OgWEuYJdgQ+/6UKywpYyTe7Tvj1M4ZlQzzb
 async def main():
     client = aiohttp.ClientSession()
     r = await client.get(URL)
-    pkg_object = await pkg.read_pkg(r.content, ZRIF)
+    pkg_object = await pkg.read_pkg(r.content)
     print()
 
 asyncio.get_event_loop().run_until_complete(main())

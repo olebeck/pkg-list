@@ -12,12 +12,11 @@ client: aiohttp.ClientSession = None
 async def get_pkg_filelist(info: dict) -> tuple[list[PkgItem], str]:
     url: str = info['PKG direct link']
     titleid: str = info["Title ID"]
-    zrif: str = info["zRIF"]
-    if not url.startswith("http") or zrif == "MISSING":
+    if not url.startswith("http"):
         return None, titleid
 
     r = await client.get(url)
-    pkg_object = await read_pkg(r.content, zrif)
+    pkg_object = await read_pkg(r.content)
     r.close()
     if pkg_object == None:
         return None, titleid
@@ -26,9 +25,8 @@ async def get_pkg_filelist(info: dict) -> tuple[list[PkgItem], str]:
 
 async def get_updates(info):
     url: str = info['PKG direct link']
-    titleid: str = info["Title ID"]
-    zrif: str = info["zRIF"]    
-    if not url.startswith("http") or zrif == "MISSING":
+    titleid: str = info["Title ID"]  
+    if not url.startswith("http"):
         return titleid, None
 
     updates = await GetGameUpdates(titleid, client)
@@ -36,14 +34,12 @@ async def get_updates(info):
 
 async def get_update_diffs(info: dict, updates: dict[str, Update]):
     titleid: str = info["Title ID"]
-    zrif: str = info["zRIF"]
 
-    updates = sorted(updates.values(), key=lambda k: k.ver)
-    for up in updates:
+    for up in sorted(updates.values(), key=lambda k: k.ver):
         print("fetching update", titleid, up.ver)
         try:
             r = await client.get(up.url)
-            pkg_object = await read_pkg(r.content, zrif)
+            pkg_object = await read_pkg(r.content)
             r.close()
             print("get_update_diffs", titleid)
         except Exception as e:

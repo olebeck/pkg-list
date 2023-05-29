@@ -80,7 +80,7 @@ class Pkg:
         self.items = list()
 
 # reads pkg headers from a http response stream
-async def read_pkg(resp: asyncio.StreamReader, zrif: str) -> Pkg:
+async def read_pkg(resp: asyncio.StreamReader) -> Pkg:
     stream = ResponseStream(resp)
 
     pkg = Pkg()
@@ -123,7 +123,6 @@ async def read_pkg(resp: asyncio.StreamReader, zrif: str) -> Pkg:
         pkg.meta_offset += 2 * 4 + meta_elem_size
 
     PkgType = 0
-
     if content_type == 6:
         PkgType = pkg_type.PKG_TYPE_PSX
     elif content_type == 7 or content_type == 0xe or content_type == 0xf or content_type == 0x10:
@@ -137,8 +136,6 @@ async def read_pkg(resp: asyncio.StreamReader, zrif: str) -> Pkg:
     else:
         raise Exception(f"unsupported content_type {content_type}")
 
-    key1: AES.AESCipher
-    ps3_key: AES.AESCipher
     main_key = bytes()
     if pkg.key_type == 1:
         main_key = pkg_psp_key
@@ -154,24 +151,10 @@ async def read_pkg(resp: asyncio.StreamReader, zrif: str) -> Pkg:
         main_key = key1.encrypt(pkg.iv)
     
 
-    if PkgType == pkg_type.PKG_TYPE_PSP or PkgType == pkg_type.PKG_TYPE_PSP:
+    if PkgType == pkg_type.PKG_TYPE_PSP:
         raise NotImplementedError("psp")
-    else: # vita
-        if PkgType == pkg_type.PKG_TYPE_VITA_PSM:
-            raise NotImplementedError("psm")
-        else:
-            pass
-        if PkgType != pkg_type.PKG_TYPE_VITA_PATCH and zrif != None:
-            try:
-                rif = zrif_decode(zrif)
-            except Exception as e:
-                print(e)
-                stream.close()
-                return None
-            content_id_offset = 0x50 if PkgType == pkg_type.PKG_TYPE_VITA_PSM else 0x10
-            rif_content_id = rif[content_id_offset:content_id_offset+36].decode("ascii")
-            if rif_content_id != pkg.content_id:
-                raise Exception(f"zRIF content id '{rif_content_id}' doesn't match pkg '{pkg.content_id}'")
+    if PkgType == pkg_type.PKG_TYPE_VITA_PSM:
+        raise NotImplementedError("psm")
 
     for item_index in range(pkg.item_count):
         item = PkgItem()
@@ -188,11 +171,7 @@ async def read_pkg(resp: asyncio.StreamReader, zrif: str) -> Pkg:
         assert data_offset % 16 == 0
 
         await stream.seek(pkg.enc_offset + name_offset, io.SEEK_SET)
-        try:
-            item.name = (await read_decrypt(stream, main_key, pkg.iv, name_size, name_offset // 16)).decode("utf-8")
-        except Exception as e:
-            print(e)
-            item.name = "unk"
+        item.name = (await read_decrypt(stream, main_key, pkg.iv, name_size, name_offset // 16)).decode("utf-8")
         pkg.items.append(item)
     stream.close()
     return pkg
@@ -206,7 +185,9 @@ if __name__ == "__main__":
     async def main():
         client = aiohttp.ClientSession()
         r = await client.get(URL)
-        pkg_object = await read_pkg(r.content, ZRIF)
+        pkg_object = await read_pkg(r.content)
+        for item in pkg_object.items:
+            print(item.name)
         r.close()
         print()
 
